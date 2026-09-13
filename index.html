@@ -89,11 +89,300 @@ let marketCat='Todos',authMode='login';
 function setView(v){state.view=v;document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id==='view-'+v));document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));if(v==='home'||v==='wishlist')render();if(v==='favorites')renderFavorites();if(v==='collections')renderCollections();if(v==='settings')renderSettings();if(v==='market')renderMarket();window.scrollTo({top:0,behavior:settings.motion?'auto':'smooth'})}
 function renderMarket(){const q=(document.getElementById('marketSearch')?.value||'').toLowerCase().trim();const list=MARKET.filter(g=>(marketCat==='Todos'||g.cat===marketCat)&&(!q||g.name.toLowerCase().includes(q)));document.querySelectorAll('[data-market-cat]').forEach(x=>x.classList.toggle('active',x.dataset.marketCat===marketCat));document.getElementById('marketGrid').innerHTML=list.length?list.map(g=>`<article class="game-card"><div class="game-cover"><div class="game-letter">${esc(g.name.slice(0,2).toUpperCase())}</div><span class="badge">${esc(g.cat)}</span></div><div class="game-info"><h3 title="${esc(g.name)}">${esc(g.name)}</h3><div class="game-meta">DIGITAL / VERIFIED MARKET PREVIEW</div><div class="deal"><div><del>${esc(g.old)}</del><strong>${esc(g.price)}</strong></div><span class="badge">${esc(g.discount)}</span></div><div class="game-actions"><button class="btn primary small" onclick='marketBuy(${JSON.stringify(g.name)})'>VIEW DEAL</button><button class="btn small" onclick='addGameToWishlist(${JSON.stringify(g.name)})'>♡</button></div></div></article>`).join(''):'<div class="market-empty">NO RESULTS. TRY ANOTHER TITLE.</div>'}
 function setMarketCat(c){marketCat=c;renderMarket()}function clearMarketSearch(){document.getElementById('marketSearch').value='';renderMarket()}function marketBuy(n){toast(n+' — deal preview. Marketplace checkout will be connected in the backend phase.')}function marketToast(){toast('Market loaded — compare, save and discover.')}function addGameToWishlist(n){const exists=items.some(x=>x.name.toLowerCase()===n.toLowerCase());if(exists)return toast('Already in your wishlist.');items.unshift({id:Date.now(),name:n,url:'https://store.steampowered.com/',image:'',category:'Tecnologia',price:'',note:'Game saved from NOIR Market',fav:false,collections:[],created:Date.now()});saveAll();updateStats();toast(n+' added to wishlist.')}
-function getAccounts(){try{return JSON.parse(localStorage.getItem('noir-accounts-v1')||'[]')}catch{return[]}}function currentUser(){try{return JSON.parse(localStorage.getItem('noir-session-v1')||'null')}catch{return null}}
-function saveAccounts(a){localStorage.setItem('noir-accounts-v1',JSON.stringify(a))}
-function openAuth(){closeAccountMenu();authMode='login';syncAuth();document.getElementById('authScreen').classList.add('open');setTimeout(()=>document.getElementById('authEmail').focus(),50)}function closeAuth(){document.getElementById('authScreen').classList.remove('open')}function setAuthMode(m){authMode=m;syncAuth()}function syncAuth(){document.getElementById('tabLogin').classList.toggle('active',authMode==='login');document.getElementById('tabSignup').classList.toggle('active',authMode==='signup');document.getElementById('authNameWrap').style.display=authMode==='signup'?'block':'none';document.getElementById('authTitle').textContent=authMode==='login'?'Welcome back.':'Create your account.';document.getElementById('authSub').textContent=authMode==='login'?'Acesse seu arquivo pessoal.':'Comece seu arquivo pessoal no NOIR.';document.getElementById('authSubmit').textContent=authMode==='login'?'SIGN IN':'CREATE ACCOUNT';document.getElementById('authMsg').textContent=''}
-document.getElementById('authForm').addEventListener('submit',e=>{e.preventDefault();const email=document.getElementById('authEmail').value.trim().toLowerCase();const password=document.getElementById('authPassword').value;const name=document.getElementById('authName').value.trim()||email.split('@')[0];const msg=document.getElementById('authMsg');let accounts=getAccounts();if(authMode==='signup'){if(password.length<8){msg.textContent='Use pelo menos 8 caracteres.';return}if(accounts.some(a=>a.email===email)){msg.textContent='Este email já está cadastrado neste dispositivo.';return}const u={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),email,name,password};accounts.push(u);saveAccounts(accounts);localStorage.setItem('noir-session-v1',JSON.stringify({id:u.id,email:u.email,name:u.name}));closeAuth();updateAuthUI();toast('Account created. Welcome to NOIR.');return}const u=accounts.find(a=>a.email===email&&a.password===password);if(!u){msg.textContent='Email ou senha incorretos.';return}localStorage.setItem('noir-session-v1',JSON.stringify({id:u.id,email:u.email,name:u.name}));closeAuth();updateAuthUI();toast('Welcome back, '+u.name+'.')});
-function updateAuthUI(){const u=currentUser(),t=document.getElementById('authTrigger');if(u){t.textContent='ACCOUNT';t.onclick=toggleAccountMenu;document.getElementById('accountName').textContent=u.name;document.getElementById('accountEmail').textContent=u.email}else{t.textContent='SIGN IN';t.onclick=openAuth}}function toggleAccountMenu(){document.getElementById('accountMenu').classList.toggle('open')}function closeAccountMenu(){document.getElementById('accountMenu').classList.remove('open')}function signOut(){localStorage.removeItem('noir-session-v1');closeAccountMenu();updateAuthUI();toast('Signed out.')}
+async function getSupabaseUser(){
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  return user || null;
+}
+
+async function currentSupabaseSession(){
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session || null;
+}
+
+function currentUser(){
+  try {
+    return JSON.parse(
+      localStorage.getItem('noir-session-v1') || 'null'
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function openAuth(){
+  closeAccountMenu();
+  authMode='login';
+  syncAuth();
+  document.getElementById('authScreen').classList.add('open');
+
+  setTimeout(()=>{
+    document.getElementById('authEmail').focus();
+  },50);
+}
+
+function closeAuth(){
+  document.getElementById('authScreen').classList.remove('open');
+}
+
+function setAuthMode(m){
+  authMode=m;
+  syncAuth();
+}
+
+function syncAuth(){
+  document.getElementById('tabLogin')
+    .classList.toggle('active',authMode==='login');
+
+  document.getElementById('tabSignup')
+    .classList.toggle('active',authMode==='signup');
+
+  document.getElementById('authNameWrap').style.display =
+    authMode==='signup' ? 'block' : 'none';
+
+  document.getElementById('authTitle').textContent =
+    authMode==='login'
+      ? 'Welcome back.'
+      : 'Create your account.';
+
+  document.getElementById('authSub').textContent =
+    authMode==='login'
+      ? 'Acesse seu arquivo pessoal.'
+      : 'Comece seu arquivo pessoal no NOIR.';
+
+  document.getElementById('authSubmit').textContent =
+    authMode==='login'
+      ? 'SIGN IN'
+      : 'CREATE ACCOUNT';
+
+  document.getElementById('authMsg').textContent='';
+}
+
+
+document.getElementById('authForm').addEventListener(
+  'submit',
+  async e => {
+
+    e.preventDefault();
+
+    const email =
+      document.getElementById('authEmail')
+        .value
+        .trim()
+        .toLowerCase();
+
+    const password =
+      document.getElementById('authPassword').value;
+
+    const name =
+      document.getElementById('authName')
+        .value
+        .trim() || email.split('@')[0];
+
+    const msg =
+      document.getElementById('authMsg');
+
+    msg.textContent='';
+
+    if(!email || !password){
+      msg.textContent='Preencha email e senha.';
+      return;
+    }
+
+    if(authMode==='signup'){
+
+      if(password.length < 8){
+        msg.textContent='Use pelo menos 8 caracteres.';
+        return;
+      }
+
+      const { data, error } =
+        await supabaseClient.auth.signUp({
+          email,
+          password,
+          options:{
+            data:{
+              full_name:name,
+              name:name
+            }
+          }
+        });
+
+      if(error){
+        msg.textContent=error.message;
+        return;
+      }
+
+      if(data.user){
+
+        localStorage.setItem(
+          'noir-session-v1',
+          JSON.stringify({
+            id:data.user.id,
+            email:data.user.email,
+            name:name
+          })
+        );
+
+        closeAuth();
+        updateAuthUI();
+
+        if(data.session){
+          toast('Account created. Welcome to NOIR.');
+        }else{
+          toast('Account created. Check your email to confirm.');
+        }
+
+      }
+
+      return;
+    }
+
+
+    const { data, error } =
+      await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+    if(error){
+      msg.textContent='Email ou senha incorretos.';
+      return;
+    }
+
+    if(data.user){
+
+      const name =
+        data.user.user_metadata?.full_name ||
+        data.user.user_metadata?.name ||
+        data.user.email?.split('@')[0] ||
+        'NOIR USER';
+
+      localStorage.setItem(
+        'noir-session-v1',
+        JSON.stringify({
+          id:data.user.id,
+          email:data.user.email,
+          name:name
+        })
+      );
+
+      closeAuth();
+      updateAuthUI();
+
+      toast('Welcome back, '+name+'.');
+    }
+
+  }
+);
+
+
+async function updateAuthUI(){
+
+  const session =
+    await currentSupabaseSession();
+
+  const t =
+    document.getElementById('authTrigger');
+
+  if(session && session.user){
+
+    const user=session.user;
+
+    const name =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email?.split('@')[0] ||
+      'NOIR USER';
+
+    localStorage.setItem(
+      'noir-session-v1',
+      JSON.stringify({
+        id:user.id,
+        email:user.email,
+        name:name
+      })
+    );
+
+    t.textContent='ACCOUNT';
+    t.onclick=toggleAccountMenu;
+
+    document.getElementById('accountName').textContent=name;
+    document.getElementById('accountEmail').textContent=user.email || '';
+
+  }else{
+
+    localStorage.removeItem('noir-session-v1');
+
+    t.textContent='SIGN IN';
+    t.onclick=openAuth;
+  }
+}
+
+
+function toggleAccountMenu(){
+  document
+    .getElementById('accountMenu')
+    .classList.toggle('open');
+}
+
+
+function closeAccountMenu(){
+  document
+    .getElementById('accountMenu')
+    .classList.remove('open');
+}
+
+
+async function signOut(){
+
+  const { error } =
+    await supabaseClient.auth.signOut();
+
+  if(error){
+    toast('Could not sign out.');
+    return;
+  }
+
+  localStorage.removeItem('noir-session-v1');
+
+  closeAccountMenu();
+  updateAuthUI();
+
+  toast('Signed out.');
+}
+
+
+supabaseClient.auth.onAuthStateChange(
+  (event, session) => {
+
+    if(session?.user){
+
+      const user=session.user;
+
+      const name =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.email?.split('@')[0] ||
+        'NOIR USER';
+
+      localStorage.setItem(
+        'noir-session-v1',
+        JSON.stringify({
+          id:user.id,
+          email:user.email,
+          name:name
+        })
+      );
+
+    }else{
+
+      localStorage.removeItem('noir-session-v1');
+
+    }
+
+    updateAuthUI();
+  }
+);{localStorage.removeItem('noir-session-v1');closeAccountMenu();updateAuthUI();toast('Signed out.')}
 document.addEventListener('click',e=>{if(!e.target.closest('.account-menu')&&!e.target.closest('#authTrigger'))closeAccountMenu()});
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
 function syncSearch(v){state.search=v;document.querySelectorAll('#homeSearch,#wishSearch').forEach(x=>{if(x.value!==v)x.value=v});render()};function setSort(v){state.sort=v;document.querySelectorAll('#homeSort,#wishSort').forEach(x=>x.value=v);render()};function setCategory(c){state.category=c;render()}
