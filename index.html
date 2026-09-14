@@ -13,10 +13,6 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.app{position:re
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
- const SUPABASE_URL = "https://lbgmjtfrbsgzszdaogqr.supabase.co";
-
-const SUPABASE_KEY = "sb_publishable_8UaQQWXUD9-mo5t0tz1LtA_bkqGGSUB";
-
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
   SUPABASE_KEY,
@@ -25,6 +21,11 @@ const supabaseClient = window.supabase.createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true
+    },
+    global: {
+      headers: {
+        apikey: SUPABASE_KEY
+      }
     }
   }
 );
