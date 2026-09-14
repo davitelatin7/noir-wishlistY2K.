@@ -72,8 +72,61 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.app{position:re
 const K={items:'noir-wishlist-v2',cols:'noir-collections-v1',settings:'noir-settings-v1'};
 let items=load(K.items,[]), collections=load(K.cols,[]), settings=Object.assign({motion:false,images:true,notes:true},load(K.settings,{}));
 let state={view:'home',category:'Todos',search:'',sort:'new'};
-function load(k,f){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))}catch{return f}}
-function saveAll(){localStorage.setItem(K.items,JSON.stringify(items));localStorage.setItem(K.cols,JSON.stringify(collections));localStorage.setItem(K.settings,JSON.stringify(settings))}
+function load(k,f){
+  try{
+    return JSON.parse(localStorage.getItem(k)||JSON.stringify(f))
+  }catch{
+    return f
+  }
+}
+async function saveAll(){
+  const session = await currentSupabaseSession();
+
+  if(!session || !session.user){
+    localStorage.setItem(K.items,JSON.stringify(items));
+    localStorage.setItem(K.cols,JSON.stringify(collections));
+    localStorage.setItem(K.settings,JSON.stringify(settings));
+    return;
+  }
+
+  const userId = session.user.id;
+
+  for(const item of items){
+    const payload = {
+      user_id: userId,
+      name: item.name,
+      url: item.url,
+      image_url: item.image || null,
+      category: (item.category || 'Outros').toLowerCase(),
+      price: item.price || null,
+      note: item.note || null,
+      is_favorite: !!item.fav,
+      alert_price: item.alertPrice || null
+    };
+
+    if(typeof item.id === 'string' && item.id.includes('-')){
+      await supabaseClient
+        .from('wishlist_items')
+        .update(payload)
+        .eq('id',item.id)
+        .eq('user_id',userId);
+    }else{
+      const {data,error} = await supabaseClient
+        .from('wishlist_items')
+        .insert(payload)
+        .select()
+        .single();
+
+      if(!error && data){
+        item.id = data.id;
+      }
+    }
+  }
+
+  localStorage.setItem(K.items,JSON.stringify(items));
+  localStorage.setItem(K.cols,JSON.stringify(collections));
+  localStorage.setItem(K.settings,JSON.stringify(settings));
+}
 function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function validUrl(u){try{const x=new URL(u);return x.protocol==='http:'||x.protocol==='https:'}catch{return false}}
 function domain(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch{return ''}}
@@ -411,6 +464,47 @@ function deleteCollection(id){if(!confirm('Delete this collection? Items will re
 function shareCollection(){if(!collections.length)return toast('Create a collection first.');const c=collections[0];const data={name:c.name,desc:c.desc,items:items.filter(x=>(x.collections||[]).includes(c.name)).map(x=>({name:x.name,url:x.url,image:x.image,price:x.price,category:x.category}))};const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));const link=location.href.split('#')[0]+'#share='+encoded; navigator.clipboard?.writeText(link);const out=document.getElementById('shareOutput');out.classList.remove('hidden');out.textContent=link;toast('Share link copied')}
 document.getElementById('exportSide').onclick=exportData;
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.modal-back.open').forEach(x=>x.classList.remove('open'))}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.querySelector('#homeSearch').focus()}});
-renderSettings();render();renderFavorites();renderCollections();updateStats();renderMarket();updateAuthUI();
+async function loadSupabaseData(){
+  const session = await currentSupabaseSession();
+  if(!session || !session.user) return;
+
+  const userId = session.user.id;
+
+  const {data,error} = await supabaseClient
+    .from('wishlist_items')
+    .select('*')
+    .eq('user_id',userId)
+    .order('created_at',{ascending:false});
+
+  if(error){
+    console.error('Erro ao carregar wishlist:',error);
+    return;
+  }
+
+  if(data){
+    items = data.map(item => ({
+      id: item.id,
+      date: new Date(item.created_at).getTime(),
+      name: item.name,
+      url: item.url,
+      image: item.image_url || '',
+      category: item.category
+        ? item.category.charAt(0).toUpperCase()+item.category.slice(1)
+        : 'Outros',
+      price: item.price || '',
+      note: item.note || '',
+      alertPrice: item.alert_price || '',
+      fav: !!item.is_favorite,
+      collections: []
+    }));
+
+    localStorage.setItem(K.items,JSON.stringify(items));
+
+    render();
+    renderFavorites();
+    updateStats();
+  }
+}
+renderSettings();render();renderFavorites();renderCollections();updateStats();renderMarket();updateAuthUI();loadSupabaseData();
 </script>
 </body></html>
